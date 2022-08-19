@@ -69,24 +69,22 @@ int main(int argc, char* argv[])
     log_flag = 1;
     csi_status = (csi_struct*)malloc(sizeof(csi_struct));
     /* check usage */
-    if (3 == argc){
-        /* If you want to log the CSI for off-line processing,
-         * you need to specify the name of the output file
-         */
-        log_flag  = 0;
-        printf("Usage: recv_csi <server_ip_address> <dest_port_number> <output_file>\n");
-    }
-    if (4 == argc){
-        fp = fopen(argv[3],"w");
-        if (!fp){
-            printf("Fail to open <output_file>, are you root?\n");
-            fclose(fp);
-            return 0;
-        }   
-    }
-    if (argc > 4){
-        printf(" Too many input arguments !\n");
-        return 0;
+    switch(argc) {
+        case 4:
+            fp = fopen(argv[3],"w");
+            if (!fp){
+                printf("Fail to open <output_file>, are you root?\n");
+                fclose(fp);
+                return 0;
+            }
+            /* no break */
+        case 3:
+            break;
+        default:
+            puts("Invalid arguments!");
+            puts("Usage: recv_csi <server_ip_address> <dest_port_number> <output_file>");
+            return -1;
+            break;
     }
 
     /* open socket */
@@ -98,8 +96,9 @@ int main(int argc, char* argv[])
     memset(&addr, 0, sizeof(struct sockaddr_in));
 
     /* specify server IP and port */
+    unsigned short port = (unsigned short)strtol(argv[1], NULL, 10);
     addr.sin_family = AF_INET;
-    addr.sin_port = htons((unsigned short)strtol(argv[1], NULL, 10));
+    addr.sin_port = htons((unsigned short)port);
     addr.sin_addr.s_addr = inet_addr(argv[2]);
 
     /* connect to the server */
@@ -157,7 +156,7 @@ int main(int argc, char* argv[])
                 buf_len = csi_status->buf_len;
                 fwrite(&buf_len,1,2,fp);
                 fwrite(buf_addr,1,buf_len,fp);
-                send(sock, buf_len, 2, 0);
+                send(sock, &buf_len, 2, 0);
                 send(sock, buf_addr, buf_len, 0);
             }
         }
