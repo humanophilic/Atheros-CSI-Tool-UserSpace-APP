@@ -26,6 +26,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
 #include "csi_fun.h"
 
 #define BUFSIZE 4096
@@ -43,6 +48,12 @@ void sig_handler(int signo)
         quit = 1;
 }
 
+int close_socket(int s) {
+    if (s != 0) {
+        close(s);
+    }
+}
+
 int main(int argc, char* argv[])
 {
     FILE*       fp;
@@ -50,32 +61,52 @@ int main(int argc, char* argv[])
     int         i;
     int         total_msg_cnt,cnt;
     int         log_flag;
+    int         sock = 0;
     unsigned char endian_flag;
     u_int16_t   buf_len;
+    struct sockaddr_in addr;
     
     log_flag = 1;
     csi_status = (csi_struct*)malloc(sizeof(csi_struct));
     /* check usage */
-    if (1 == argc){
+    if (3 == argc){
         /* If you want to log the CSI for off-line processing,
          * you need to specify the name of the output file
          */
         log_flag  = 0;
-        printf("/**************************************/\n");
-        printf("/*   Usage: recv_csi <output_file>    */\n");
-        printf("/**************************************/\n");
+        printf("Usage: recv_csi <server_ip_address> <dest_port_number> <output_file>\n");
     }
-    if (2 == argc){
-        fp = fopen(argv[1],"w");
+    if (4 == argc){
+        fp = fopen(argv[3],"w");
         if (!fp){
             printf("Fail to open <output_file>, are you root?\n");
             fclose(fp);
             return 0;
         }   
     }
-    if (argc > 2){
+    if (argc > 4){
         printf(" Too many input arguments !\n");
         return 0;
+    }
+
+    /* open socket */
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == -1) {
+        printf("socket error\n");
+        return -1;
+    }
+    memset(&addr, 0, sizeof(struct sockaddr_in));
+
+    /* specify server IP and port */
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((unsigned short)strtol(argv[1], NULL, 10));
+    addr.sin_addr.s_addr = inet_addr(argv[2]);
+
+    /* connect to the server */
+    if (connect(sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in)) == -1) {
+        printf("connect error\n");
+        close(sock);
+        return -1;
     }
 
     fd = open_csi_device();
@@ -88,12 +119,13 @@ int main(int argc, char* argv[])
 
     quit = 0;
     total_msg_cnt = 0;
-    
+
     while(1){
         if (1 == quit){
-            return 0;
             fclose(fp);
             close_csi_device(fd);
+            close_socket(sock);
+            return 0;
         }
 
         /* keep listening to the kernel and waiting for the csi report */
@@ -125,11 +157,14 @@ int main(int argc, char* argv[])
                 buf_len = csi_status->buf_len;
                 fwrite(&buf_len,1,2,fp);
                 fwrite(buf_addr,1,buf_len,fp);
+                send(sock, buf_len, 2, 0);
+                send(sock, buf_addr, buf_len, 0);
             }
         }
     }
     fclose(fp);
     close_csi_device(fd);
     free(csi_status);
+    close(sock);
     return 0;
 }
